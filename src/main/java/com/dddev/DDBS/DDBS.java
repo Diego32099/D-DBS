@@ -17,7 +17,7 @@ import org.slf4j.Logger;
 @Mod(DDBS.MODID)
 public class DDBS {
 
-    public static final String MODID = "DDBS";
+    public static final String MODID = "ddbs";
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public DDBS() {

@@ -15,11 +15,11 @@ license="${mod_license}"
 # A list of mods - how many allowed here is determined by the individual mod loader
 [[mods]] #mandatory
 # The modid of the mod
-modId="vpb_casings" #mandatory
+modId="ddbs" #mandatory
 # The version number of the mod
-version="0.0.1" #mandatory
+version="0.1.0" #mandatory
 # A display name for the mod
-displayName="Vpb Casings" #mandatory
+displayName="DDBS" #mandatory
 # A URL to query for updates for this mod. See the JSON update specification https://docs.minecraftforge.net/en/latest/misc/updatechecker/
 #updateJSONURL="https://change.me.example.invalid/updates.json" #optional
 # A URL for the "homepage" for this mod, displayed in the mod UI
@@ -41,7 +41,7 @@ authors="Diego32099" #optional
 # The description text for the mod (multi line!) (#mandatory)
 description='''Adds projectiles when guns fired'''
 # A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
-[[dependencies."vpb_casings"]] #optional
+[[dependencies."ddbs"]] #optional
     # the modid of the dependency
     modId="forge" #mandatory
     # Does this dependency have to exist - if not, ordering below must be specified
@@ -55,7 +55,7 @@ description='''Adds projectiles when guns fired'''
     # Side this dependency is applied on - BOTH, CLIENT, or SERVER
     side="BOTH"
 # Here's another dependency
-[[dependencies."vpb_casings"]]
+[[dependencies."ddbs"]]
     modId="minecraft"
     mandatory=true
     # This version range declares a minimum of the current minecraft version up to but not including the next major version

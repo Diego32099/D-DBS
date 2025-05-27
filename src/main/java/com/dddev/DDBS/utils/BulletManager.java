@@ -141,31 +141,63 @@ public class BulletManager {
 
     @Nullable
     private static EntityHitResult findEntityAlongPath(Level level, Vec3 start, Vec3 end, Entity shooter) {
-        AABB trajectoryBox = new AABB(start, end).inflate(1.0);
-        List<Entity> entities = level.getEntities(shooter, trajectoryBox);
+        Vec3 rayDir = end.subtract(start);
+
+        // Manejo de división por cero para rayDirInv
+        double invX = rayDir.x != 0 ? 1.0 / rayDir.x : Double.POSITIVE_INFINITY;
+        double invY = rayDir.y != 0 ? 1.0 / rayDir.y : Double.POSITIVE_INFINITY;
+        double invZ = rayDir.z != 0 ? 1.0 / rayDir.z : Double.POSITIVE_INFINITY;
+
+        AABB rayBox = new AABB(start, end); // No se infla
+
+        List<Entity> entities = level.getEntities(shooter, rayBox);
 
         Entity closestEntity = null;
-        Vec3 closestHitLoc = null;
+        Vec3 closestHit = null;
         double closestDistance = Double.MAX_VALUE;
 
         for (Entity entity : entities) {
             if (entity.isSpectator() || !entity.isPickable()) continue;
 
-            AABB entityBox = entity.getBoundingBox().inflate(0.3);
-            Optional<Vec3> hitResult = entityBox.clip(start, end);
+            AABB box = entity.getBoundingBox(); // sin inflate
 
-            if (hitResult.isPresent()) {
-                double distance = start.distanceToSqr(hitResult.get());
-                if (distance < closestDistance) {
-                    closestDistance = distance;
+            // === intersectRayAABB inline ===
+            double tmin = 0.0;
+            double tmax = Double.MAX_VALUE;
+
+            for (int axis = 0; axis < 3; axis++) {
+                double origin = axis == 0 ? start.x : (axis == 1 ? start.y : start.z);
+                double invDir = axis == 0 ? invX : (axis == 1 ? invY : invZ);
+                double bmin = axis == 0 ? box.minX : (axis == 1 ? box.minY : box.minZ);
+                double bmax = axis == 0 ? box.maxX : (axis == 1 ? box.maxY : box.maxZ);
+
+                double t1 = (bmin - origin) * invDir;
+                double t2 = (bmax - origin) * invDir;
+
+                double tNear = Math.min(t1, t2);
+                double tFar = Math.max(t1, t2);
+
+                tmin = Math.max(tmin, tNear);
+                tmax = Math.min(tmax, tFar);
+            }
+
+            if (tmin > tmax) continue; // No intersección
+
+            // Si hay intersección, intentamos clip
+            Optional<Vec3> hitOpt = box.clip(start, end);
+            if (hitOpt.isPresent()) {
+                double dist = start.distanceToSqr(hitOpt.get());
+                if (dist < closestDistance) {
                     closestEntity = entity;
-                    closestHitLoc = hitResult.get();
+                    closestHit = hitOpt.get();
+                    closestDistance = dist;
                 }
             }
         }
 
-        return closestEntity != null ? new EntityHitResult(closestEntity, closestHitLoc) : null;
+        return closestEntity != null ? new EntityHitResult(closestEntity, closestHit) : null;
     }
+
 
     @Nullable
     private static HitResult determineClosestHit(Vec3 start, BlockHitResult blockHit, EntityHitResult entityHit) {
