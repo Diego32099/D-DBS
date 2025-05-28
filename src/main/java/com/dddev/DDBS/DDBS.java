@@ -25,8 +25,8 @@ public class DDBS {
         MinecraftForge.EVENT_BUS.register(this);
     }
     @SubscribeEvent
-    public void onServerTick(TickEvent event) {
-        if (event.phase == TickEvent.Phase.START) {
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) {
             BulletManager.serverTick();
         }
     }
