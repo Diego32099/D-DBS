@@ -4,21 +4,24 @@ import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.*;
 
-import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.List;
-import java.util.Optional;
+
+import static com.dddev.DDBS.Dbug.TNTSpawner.spawnActiveTNT;
+import static com.dddev.DDBS.Dbug.TNTSpawner.spawnActiveTNTXYZ;
 
 
 public class BulletManager {
 
     public static final BulletPool POOL = new BulletPool(20000);
+    private static List<LivingEntity> currentTickEntities = List.of();
+
 
     public static class BulletData {
         public double posX, posY, posZ;
@@ -74,13 +77,11 @@ public class BulletManager {
             int listIndex = indexMap.getOrDefault(bulletIndex, -1);
             if (listIndex == -1) return;
 
-            // Swap con último elemento
             int lastIdx = activeIndices.size() - 1;
             int lastBulletIdx = activeIndices.getInt(lastIdx);
             activeIndices.set(listIndex, lastBulletIdx);
             activeIndices.removeInt(lastIdx);
 
-            // Actualizar mapa solo si hubo swap
             if (listIndex != lastIdx) {
                 indexMap.put(lastBulletIdx, listIndex);
             }
@@ -102,129 +103,158 @@ public class BulletManager {
 
     private static final float TICK_DURATION = 0.05f;
     private static final float GRAVITY_PER_TICK = 0.49f;
-    private static final float AIR_RESISTANCE = 0.98f;
+    private static final float AIR_RESISTANCE = 0.99f;
     private static final int MAX_TICKS = 1000;
 
 
 
-    private static void updatePhysics(BulletData bullet) {
+
+    private static void SimulateBullet(BulletData bullet, int idx) {
+        double startX = bullet.posX;
+        double startY = bullet.posY;
+        double startZ = bullet.posZ;
+
+        double dx = bullet.velX * TICK_DURATION;
+        double dy = bullet.velY * TICK_DURATION;
+        double dz = bullet.velZ * TICK_DURATION;
+
+        bullet.posX += dx;
+        bullet.posY += dy;
+        bullet.posZ += dz;
+
         bullet.velX *= AIR_RESISTANCE;
-        bullet.velY = (bullet.velY * AIR_RESISTANCE) - GRAVITY_PER_TICK;
+        bullet.velY *= AIR_RESISTANCE;
+        bullet.velY -= GRAVITY_PER_TICK;
         bullet.velZ *= AIR_RESISTANCE;
 
-        bullet.posX += bullet.velX * TICK_DURATION;
-        bullet.posY += bullet.velY * TICK_DURATION;
-        bullet.posZ += bullet.velZ * TICK_DURATION;
-    }
+        double endX = bullet.posX;
+        double endY = bullet.posY;
+        double endZ = bullet.posZ;
 
 
-    private static void checkCollisions(BulletData bullet, int idx) {
-        Vec3 start = new Vec3(
-                bullet.posX - bullet.velX * TICK_DURATION,
-                bullet.posY - bullet.velY * TICK_DURATION,
-                bullet.posZ - bullet.velZ * TICK_DURATION
-        );
-        Vec3 end = new Vec3(bullet.posX, bullet.posY, bullet.posZ);
+        Vec3 startVec = new Vec3(startX, startY, startZ);
+        Vec3 endVec = new Vec3(endX, endY, endZ);
+        Entity[] hitEntity = new Entity[1];
+        double[] hitPos = new double[3];
 
         BlockHitResult blockHit = bullet.level.clip(new ClipContext(
-                start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, bullet.shooter
+                startVec, endVec, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, bullet.shooter
         ));
 
-        EntityHitResult entityHit = findEntityAlongPath(bullet.level, start, end, bullet.shooter);
-        HitResult finalHit = determineClosestHit(start, blockHit, entityHit);
 
-        if (finalHit != null) {
-            handleImpact(finalHit, bullet.shooter);
+        boolean hasEntityHit = findEntityAlongPath(
+                bullet.level,
+                startX, startY, startZ,
+                endX, endY, endZ,
+                bullet.shooter,
+                hitEntity, hitPos
+        );
+        double blockDist = blockHit.getType() == HitResult.Type.BLOCK
+                ? startVec.distanceToSqr(blockHit.getLocation()) : Double.MAX_VALUE;
+
+        double entityDist = hasEntityHit
+                ? (hitPos[0] - startX) * (hitPos[0] - startX)
+                + (hitPos[1] - startY) * (hitPos[1] - startY)
+                + (hitPos[2] - startZ) * (hitPos[2] - startZ)
+                : Double.MAX_VALUE;
+
+
+        if (hasEntityHit && entityDist < blockDist) {
+            handleEntityImpact(hitEntity[0], hitPos[0], hitPos[1], hitPos[2]);
+            POOL.destroy(idx);
+        } else if (blockHit.getType() == HitResult.Type.BLOCK) {
+            handleBlockImpact(bullet.level, blockHit.getBlockPos(), blockHit.getLocation());
             POOL.destroy(idx);
         }
     }
 
-    @Nullable
-    private static EntityHitResult findEntityAlongPath(Level level, Vec3 start, Vec3 end, Entity shooter) {
-        Vec3 rayDir = end.subtract(start);
 
-        // Manejo de división por cero para rayDirInv
-        double invX = rayDir.x != 0 ? 1.0 / rayDir.x : Double.POSITIVE_INFINITY;
-        double invY = rayDir.y != 0 ? 1.0 / rayDir.y : Double.POSITIVE_INFINITY;
-        double invZ = rayDir.z != 0 ? 1.0 / rayDir.z : Double.POSITIVE_INFINITY;
+    private static boolean findEntityAlongPath(Level level,
+                                               double startX, double startY, double startZ,
+                                               double endX, double endY, double endZ,
+                                               Entity shooter,
+                                               Entity[] outEntity, double[] outPos) {
 
-        AABB rayBox = new AABB(start, end); // No se infla
+        double dx = endX - startX;
+        double dy = endY - startY;
+        double dz = endZ - startZ;
 
+        double invX = dx != 0.0 ? 1.0 / dx : Double.POSITIVE_INFINITY;
+        double invY = dy != 0.0 ? 1.0 / dy : Double.POSITIVE_INFINITY;
+        double invZ = dz != 0.0 ? 1.0 / dz : Double.POSITIVE_INFINITY;
+
+        AABB rayBox = new AABB(startX, startY, startZ, endX, endY, endZ).inflate(0.01);
         List<Entity> entities = level.getEntities(shooter, rayBox);
 
         Entity closestEntity = null;
-        Vec3 closestHit = null;
-        double closestDistance = Double.MAX_VALUE;
+        double closestDistSq = Double.MAX_VALUE;
+        double hitX = 0, hitY = 0, hitZ = 0;
 
         for (Entity entity : entities) {
-            if (entity.isSpectator() || !entity.isPickable()) continue;
+            if (!(entity instanceof LivingEntity) || entity.isSpectator()) continue;
 
-            AABB box = entity.getBoundingBox(); // sin inflate
+            AABB box = entity.getBoundingBox();
+            double tmin = 0.0, tmax = Double.MAX_VALUE;
 
-            // === intersectRayAABB inline ===
-            double tmin = 0.0;
-            double tmax = Double.MAX_VALUE;
+            double t1 = (box.minX - startX) * invX;
+            double t2 = (box.maxX - startX) * invX;
+            double tNear = Math.min(t1, t2);
+            double tFar = Math.max(t1, t2);
+            tmin = Math.max(tmin, tNear);
+            tmax = Math.min(tmax, tFar);
 
-            for (int axis = 0; axis < 3; axis++) {
-                double origin = axis == 0 ? start.x : (axis == 1 ? start.y : start.z);
-                double invDir = axis == 0 ? invX : (axis == 1 ? invY : invZ);
-                double bmin = axis == 0 ? box.minX : (axis == 1 ? box.minY : box.minZ);
-                double bmax = axis == 0 ? box.maxX : (axis == 1 ? box.maxY : box.maxZ);
+            t1 = (box.minY - startY) * invY;
+            t2 = (box.maxY - startY) * invY;
+            tNear = Math.min(t1, t2);
+            tFar = Math.max(t1, t2);
+            tmin = Math.max(tmin, tNear);
+            tmax = Math.min(tmax, tFar);
 
-                double t1 = (bmin - origin) * invDir;
-                double t2 = (bmax - origin) * invDir;
+            t1 = (box.minZ - startZ) * invZ;
+            t2 = (box.maxZ - startZ) * invZ;
+            tNear = Math.min(t1, t2);
+            tFar = Math.max(t1, t2);
+            tmin = Math.max(tmin, tNear);
+            tmax = Math.min(tmax, tFar);
 
-                double tNear = Math.min(t1, t2);
-                double tFar = Math.max(t1, t2);
+            if (tmin > tmax || tmax < 0.0) continue;
 
-                tmin = Math.max(tmin, tNear);
-                tmax = Math.min(tmax, tFar);
+            double hx = startX + dx * tmin;
+            double hy = startY + dy * tmin;
+            double hz = startZ + dz * tmin;
+
+            double distSq = (hx - startX) * (hx - startX)
+                    + (hy - startY) * (hy - startY)
+                    + (hz - startZ) * (hz - startZ);
+
+            if (distSq < closestDistSq) {
+                closestDistSq = distSq;
+                closestEntity = entity;
+                hitX = hx;
+                hitY = hy;
+                hitZ = hz;
             }
-
-            if (tmin > tmax) continue; // No intersección
-
-            // Si hay intersección, intentamos clip
-            Optional<Vec3> hitOpt = box.clip(start, end);
-            if (hitOpt.isPresent()) {
-                double dist = start.distanceToSqr(hitOpt.get());
-                if (dist < closestDistance) {
-                    closestEntity = entity;
-                    closestHit = hitOpt.get();
-                    closestDistance = dist;
-                }
-            }
         }
 
-        return closestEntity != null ? new EntityHitResult(closestEntity, closestHit) : null;
+        if (closestEntity != null) {
+            outEntity[0] = closestEntity;
+            outPos[0] = hitX;
+            outPos[1] = hitY;
+            outPos[2] = hitZ;
+            return true;
+        }
+
+        return false;
     }
 
 
-    @Nullable
-    private static HitResult determineClosestHit(Vec3 start, BlockHitResult blockHit, EntityHitResult entityHit) {
-        double blockDist = blockHit.getType() == HitResult.Type.BLOCK ?
-                start.distanceToSqr(blockHit.getLocation()) : Double.MAX_VALUE;
-        double entityDist = entityHit != null ?
-                start.distanceToSqr(entityHit.getLocation()) : Double.MAX_VALUE;
-
-        if (blockDist < entityDist) {
-            return blockHit;
-        } else if (entityHit != null) {
-            return entityHit;
-        }
-        return null;
+    private static void handleEntityImpact(Entity entity, double x, double y, double z) {
+        entity.hurt(entity.level().damageSources().generic(), 10);
     }
 
-    private static void handleImpact(HitResult result, Entity shooter) {
-        if (result.getType() == HitResult.Type.ENTITY) {
-            DamageSource source = shooter.level().damageSources().generic();
-            Entity target = ((EntityHitResult) result).getEntity();
-            target.hurt(source, 10);
-            // Apply damage to target
-        } else if (result.getType() == HitResult.Type.BLOCK) {
-            BlockPos hitPos = ((BlockHitResult) result).getBlockPos();
-            // Create impact effect
-        }
+    private static void handleBlockImpact(Level level,BlockPos pos, Vec3 hitVec) {
     }
+
 
     public static void serverTick() {
         BulletData[] bullets = POOL.getAllBullets();
@@ -234,13 +264,8 @@ public class BulletManager {
             int idx = active.getInt(i);
             BulletData bullet = bullets[idx];
 
-            // 1. Actualizar física
-            updatePhysics(bullet);
+            SimulateBullet(bullet, idx);
 
-            // 2. Detección de colisiones
-            checkCollisions(bullet, idx);
-
-            // 3. Verificar expiración
             if (++bullet.age > MAX_TICKS) {
                 POOL.destroy(idx);
             } else {
