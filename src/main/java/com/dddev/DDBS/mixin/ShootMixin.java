@@ -9,6 +9,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.spongepowered.asm.mixin.Mixin;
@@ -18,6 +19,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Mixin(value = GunItem.class, remap = false, priority = 1300)
 public abstract class ShootMixin {
@@ -63,9 +65,10 @@ public abstract class ShootMixin {
             gunTag.put("Mag", loadedBullets);
             gunTag.putInt("ammo", loadedBullets.size());
 
-            // Create dummy stack with bullet type
+            // Create bullet with type
             // When firing:
             Vec3 startPos = player.getEyePosition();
+            ThreadLocalRandom rand = ThreadLocalRandom.current();
             try {
                 AmmoConfig.Caliber caliber = AmmoConfig.Caliber.valueOf(gunTag.getString("Cal"));
                 AmmoConfig.AmmoType ammoType = AmmoConfig.AmmoType.valueOf(bulletType);
@@ -73,18 +76,33 @@ public abstract class ShootMixin {
                 AmmoConfig.AmmoData data = AmmoConfig.AMMUNITION
                         .getOrDefault(caliber, Map.of())
                         .get(ammoType);
-                Vec3 Velocity = player.getLookAngle().scale(data.v());
+                Vec3 Dir = player.getLookAngle();
+                float v = data.v();
+                int qty = data.qty();
+                double spreadFactor = 0.0075 * data.dis();
+                float dmg = data.dmg();
+                float ap = data.ap();
+                Level level = player.level();
+                for (int i = 0; i < qty; i++) {
 
-                for (int i = 0; i < data.qty(); i++) {
+                    double dx = Dir.x + rand.nextGaussian() * spreadFactor;
+                    double dy = Dir.y + rand.nextGaussian() * spreadFactor;
+                    double dz = Dir.z + rand.nextGaussian() * spreadFactor;
+
+                    double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    if (len == 0.0) len = 1.0; // Evita división por cero
+                    dx = dx / len * v;
+                    dy = dy / len * v;
+                    dz = dz / len * v;
 
 
                     BulletManager.POOL.shoot(
                             startPos.x, startPos.y, startPos.z,
-                            Velocity.x, Velocity.y, Velocity.z,
+                            dx, dy, dz,
                             player,
-                            data.dmg(),
-                            data.ap(),
-                            player.level()
+                            dmg,
+                            ap,
+                            level
                     );
                 }
             } catch (IllegalArgumentException ex) {
