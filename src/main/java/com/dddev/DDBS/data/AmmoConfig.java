@@ -33,9 +33,9 @@ public class AmmoConfig {
 
     public static final Map<Caliber, Map<AmmoType, AmmoData>> AMMUNITION = Map.ofEntries(
             entry(Caliber.ammo12gauge, Map.of(
-                    AmmoType.BU, new AmmoData(4.5f, 3.0f, 5.0f, 100, 0.02f),  // 00 Buckshot
-                    AmmoType.BI, new AmmoData(1.2f, 0.8f, 5.0f,  1000, 0.04f),  // Birdshot
-                    AmmoType.ST, new AmmoData(18.0f, 18.0f, 4.5f,  10000, 0.001f)  // Slug
+                    AmmoType.BU, new AmmoData(4.5f, 3.0f, 50.0f, 100, 0.02f),  // 00 Buckshot
+                    AmmoType.BI, new AmmoData(1.2f, 0.8f, 50.0f,  1000, 0.04f),  // Birdshot
+                    AmmoType.ST, new AmmoData(18.0f, 18.0f, 40.0f,  10000, 0.001f)  // Slug
             )),
             entry(Caliber.ammo338lapua, Map.of(
                     AmmoType.AP, new AmmoData(30.0f, 32.0f, 7.0f,  1, 0.0f),  // Armor Piercing
