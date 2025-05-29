@@ -97,9 +97,9 @@ public class AmmoConfig {
                     AmmoType.ST, new AmmoData(20.0f, 32.0f, 6.0f,  1, 0.0f)
             )),
             entry(Caliber.ammo9mm, Map.of(
-                    AmmoType.AP, new AmmoData(5.0f, 15.0f, 10.0f,  1, 0.0f),
-                    AmmoType.HP, new AmmoData(8.0f, 2.0f, 0.0f,  1, 0.0f),
-                    AmmoType.ST, new AmmoData(5.0f, 12.0f, 1.0f,  1, 0.0f)
+                    AmmoType.AP, new AmmoData(100.0f, 15.0f, 100.0f,  1, 0.0f),
+                    AmmoType.HP, new AmmoData(50.0f, 2.0f, 50.0f,  1, 0.0f),
+                    AmmoType.ST, new AmmoData(1.0f, 12.0f, 10.0f,  1, 0.0f)
             ))
     );
 
